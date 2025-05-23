@@ -61,7 +61,15 @@ def main():
         else:
             print("Cached mapping not found or outdated. Downloading fresh KEGG module data...")
             module_to_kos = kegg_manager.download_and_pickle_mapping(pickle_path)
-    
+
+    # Prepare a simple module-to-kos dict for the report generator
+    simple_module_to_kos = {}
+    for module_id, module_data in module_to_kos.items():
+        if isinstance(module_data, dict) and 'ko_set' in module_data:
+            simple_module_to_kos[module_id] = module_data['ko_set']
+        else:
+            simple_module_to_kos[module_id] = module_data
+
     # Get all KO lists
     print(f"Loading KO lists from {ko_lists_dir}...")
     ko_lists = ko_manager.get_ko_lists(ko_lists_dir)
@@ -88,7 +96,7 @@ def main():
     # Generate reports
     results_df = report_generator.generate_comparison_report(all_results, module_info_df)
     report_generator.generate_individual_reports(all_results, module_info_df)
-    report_generator.generate_detailed_report(all_results, module_to_kos, module_info_df, ko_lists)
+    report_generator.generate_detailed_report(all_results, simple_module_to_kos, module_info_df, ko_lists)
     
     print("Analysis complete!")
     return 0

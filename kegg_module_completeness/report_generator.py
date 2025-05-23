@@ -127,7 +127,7 @@ class ReportGenerator:
         # Generate detailed report
         detailed_output = os.path.join(self.output_dir, "module_details.tsv")
         with open(detailed_output, 'w') as f:
-            f.write("Module_ID\tName\tClass\tDefinition\tAverage_Completeness\tPresent_KOs\tMissing_KOs\tTotal_KOs\n")
+            f.write("Module_ID\tName\tClass\tDefinition\tAverage_Completeness\tPresent_KOs\tMissing_KOs\tTotal_KOs\tBoolean_Structure\n")
             
             for module_id in sorted(all_module_ids, key=lambda m: avg_completeness.get(m, 0), reverse=True):
                 if module_id in module_info_df.index:
@@ -148,6 +148,6 @@ class ReportGenerator:
                     missing_kos = module_kos - present_kos
                     
                     f.write(f"{module_id}\t{name}\t{class_info}\t{definition}\t{avg:.2f}\t")
-                    f.write(f"{','.join(present_kos)}\t{','.join(missing_kos)}\t{total_kos}\n")
+                    f.write(f"{','.join(present_kos)}\t{','.join(missing_kos)}\t{total_kos}\t{definition}\n")
         
         print(f"Detailed module information saved to {detailed_output}")
