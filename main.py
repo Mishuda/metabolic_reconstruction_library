@@ -14,10 +14,6 @@ which is automatically refreshed every 30 days.
 import os
 import sys
 import datetime
-
-# Add the parent directory to sys.path to ensure imports work correctly
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from kegg_module_completeness.ko_manager import KoListManager
 from kegg_module_completeness.kegg_manager import KeggModuleManager
 from kegg_module_completeness.completeness_calculator import CompletenessCalculator
