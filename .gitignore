@@ -1,0 +1,30 @@
+# Cache directories
+pickled_data/
+**/pickled_data/
+
+# Output directories 
+significant_ko_lists/
+*_module_completeness.tsv
+module_completeness_comparison.tsv
+module_details.tsv
+
+# Input data directories (if large data files)
+input_files/
+
+# Python standard ignore patterns
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# IDE-specific files
+.vscode/
+.idea/
