@@ -7,23 +7,27 @@ from .kegg_repository import KeggRepository
 class KeggModuleManager:
     """Manages KEGG module data using the repository pattern."""
     
-    def __init__(self, cache_dir: str):
+    def __init__(self, cache_dir: str = None):
         """Initialize the KEGG module manager.
         
         Args:
-            cache_dir: Directory to store cached module information
+            cache_dir: Directory to store cached module information (optional, defaults to root)
         """
-        self.cache_dir = cache_dir
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir)
-        
-        # Create pickled_data directory
-        self.pickled_data_dir = os.path.join(cache_dir, "pickled_data")
+        # Use root directory for pickled data instead of cache_dir
+        self.pickled_data_dir = "pickled_data"
         if not os.path.exists(self.pickled_data_dir):
             os.makedirs(self.pickled_data_dir)
+        
+        # Keep cache_dir for other caching purposes if needed
+        if cache_dir:
+            self.cache_dir = cache_dir
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+        else:
+            self.cache_dir = self.pickled_data_dir
             
-        # Initialize the repository
-        self.repository = KeggRepository(cache_dir)
+        # Initialize the repository with cache directory
+        self.repository = KeggRepository(self.cache_dir)
     
     def load_module_to_ko_mapping(self, mapping_file: str) -> Dict[str, Dict[str, Union[Set[str], str]]]:
         """Load module to KO mapping from file.

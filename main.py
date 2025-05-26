@@ -97,7 +97,7 @@ def main():
 
     # Initialize components
     ko_manager = KoListManager()
-    kegg_manager = KeggModuleManager(output_dir)
+    kegg_manager = KeggModuleManager(output_dir)  # Still pass output_dir for other caching
     calculator = CompletenessCalculator()
     report_generator = ReportGenerator(output_dir)
 
@@ -107,9 +107,9 @@ def main():
         # Use provided mapping file
         module_to_kos = kegg_manager.load_module_to_ko_mapping(mapping_file)
     else:
-        # Use the manager's internal pickle directory structure
+        # Use root directory for pickle files
         pickle_filename = "kegg_module_to_kos.pickle"
-        pickle_path = os.path.join(kegg_manager.pickled_data_dir, pickle_filename)
+        pickle_path = os.path.join("pickled_data", pickle_filename)  # Root directory path
         
         if (os.path.exists(pickle_path) and 
             (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(pickle_path))).days < 30):

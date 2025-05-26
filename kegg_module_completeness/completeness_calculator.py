@@ -1,184 +1,169 @@
-from typing import Dict, Set
 import re
+from typing import Dict, Set, List, Union
 
 class CompletenessCalculator:
     """
-    Class to calculate KEGG module completeness using structured definitions.
+    Class to calculate KEGG module completeness using KEGG's standardized definition format.
     """
     
     def __init__(self):
         """Initialize the completeness calculator."""
         self.cached_module_structures = {}
     
-    def parse_module_definition(self, definition):
+    def parse_module_definition(self, definition: str) -> Dict:
         """
-        Parse a KEGG module definition into a structured format.
+        Parse a KEGG module definition using KEGG's standard format.
+        
+        KEGG format rules:
+        - Space separation = AND
+        - Comma separation in () = OR
+        - Plus separation = complex (all required)
+        - Minus prefix = optional
+        - Stop at first description text
         
         Args:
-            definition (str): KEGG module definition string
+            definition: KEGG module definition string
             
         Returns:
-            dict: Structured representation of the module
+            Structured representation of the module
         """
         if not definition:
-            return {"type": "empty", "blocks": []}
+            return {"type": "empty", "components": []}
         
-        # Clean up definition
+        # Extract only the logical part (before descriptions)
+        logical_part = self._extract_logical_definition(definition)
+        
+        if not logical_part:
+            return {"type": "empty", "components": []}
+        
+        # Parse components using KEGG's simple rules
+        components = self._parse_kegg_format(logical_part)
+        
+        return {"type": "module", "components": components}
+    
+    def _extract_logical_definition(self, definition: str) -> str:
+        """
+        Extract only the logical part of a KEGG definition.
+        Stops at the first enzyme name or description.
+        """
+        # Clean whitespace
         definition = re.sub(r'\s+', ' ', definition).strip()
         
-        # Handle optional components (marked with -)
-        # Store their positions for later use
-        optional_components = []
-        def mark_optional(match):
-            start, end = match.span()
-            optional_components.append((start, end))
-            return match.group(0).replace('-', '')
-            
-        definition = re.sub(r'-K\d{5}', lambda m: mark_optional(m), definition)
+        # Find where descriptions start
+        # Pattern: K##### followed by lowercase letter (enzyme name)
+        desc_match = re.search(r'K\d{5}\s+[a-z]', definition)
+        if desc_match:
+            return definition[:desc_match.start()].strip()
         
-        # Replace multi-subunit enzyme notation with a special marker
-        definition = definition.replace('+', ' __AND__ ')
+        # Pattern: [EC: or [RN: 
+        ec_match = re.search(r'\s*\[(?:EC|RN):', definition)
+        if ec_match:
+            return definition[:ec_match.start()].strip()
         
-        # Parse the definition into blocks (steps)
-        blocks = []
-        current_block = ""
-        in_parentheses = 0
-        
-        for char in definition:
-            if char == '(' and not in_parentheses:
-                if current_block.strip():
-                    blocks.append({"type": "step", "ko": current_block.strip()})
-                    current_block = ""
-                in_parentheses += 1
-                current_block += char
-            elif char == ')' and in_parentheses:
-                current_block += char
-                in_parentheses -= 1
-                if not in_parentheses:
-                    # Process OR block
-                    or_block = current_block[1:-1].split(',')
-                    blocks.append({"type": "or", "options": [ko.strip() for ko in or_block]})
-                    current_block = ""
-            elif in_parentheses or not char.isspace():
-                current_block += char
-            elif current_block.strip():
-                blocks.append({"type": "step", "ko": current_block.strip()})
-                current_block = ""
-        
-        if current_block.strip():
-            blocks.append({"type": "step", "ko": current_block.strip()})
-        
-        # Mark optional components in the structured representation
-        for block in blocks:
-            if block["type"] == "step":
-                ko = block["ko"]
-                # Check if this KO is in any of the optional spans
-                is_optional = any(start <= definition.find(ko) <= end for start, end in optional_components)
-                if is_optional:
-                    block["optional"] = True
-            elif block["type"] == "or":
-                for i, option in enumerate(block["options"]):
-                    # Check if this option is in any of the optional spans
-                    is_optional = any(start <= definition.find(option) <= end for start, end in optional_components)
-                    if is_optional:
-                        # Convert the option to a dict to mark it as optional
-                        if isinstance(option, str):
-                            block["options"][i] = {"ko": option, "optional": True}
-        
-        return {"type": "module", "blocks": blocks}
+        return definition
     
-    def evaluate_module_completeness(self, module_structure, ko_set):
+    def _parse_kegg_format(self, logical_def: str) -> List[Dict]:
         """
-        Evaluate a parsed module structure against a set of KOs.
+        Parse KEGG definition using standard KEGG format rules.
+        """
+        components = []
         
-        Args:
-            module_structure (dict): Module structure from parse_module_definition
-            ko_set (set): Set of KO identifiers present in the dataset
+        # Split by spaces = AND components
+        tokens = logical_def.split()
+        
+        for token in tokens:
+            token = token.strip()
+            if not token:
+                continue
+                
+            # Handle optional (minus prefix)
+            is_optional = token.startswith('-')
+            if is_optional:
+                token = token[1:]
             
-        Returns:
-            float: Completeness score between 0 and 1
+            if token.startswith('(') and token.endswith(')'):
+                # OR group: (K01584,K01585,K02626)
+                or_content = token[1:-1]  # Remove parentheses
+                or_options = [opt.strip() for opt in or_content.split(',')]
+                
+                components.append({
+                    "type": "or",
+                    "options": or_options,
+                    "optional": is_optional
+                })
+                
+            elif '+' in token:
+                # Complex: K07432+K07441 (all subunits required)
+                subunits = [sub.strip() for sub in token.split('+')]
+                
+                components.append({
+                    "type": "complex", 
+                    "subunits": subunits,
+                    "optional": is_optional
+                })
+                
+            elif re.match(r'K\d{5}', token):
+                # Single KO: K01480
+                components.append({
+                    "type": "single",
+                    "ko": token,
+                    "optional": is_optional
+                })
+        
+        return components
+    
+    def evaluate_module_completeness(self, module_structure: Dict, ko_set: Set[str]) -> float:
+        """
+        Evaluate module completeness using KEGG's AND/OR logic.
         """
         if module_structure["type"] == "empty":
             return 0.0
         
-        blocks = module_structure["blocks"]
-        if not blocks:
+        components = module_structure["components"]
+        if not components:
             return 0.0
         
-        def evaluate_block(block):
-            if block["type"] == "step":
-                ko = block["ko"]
-                is_optional = block.get("optional", False)
-                
-                # Handle multi-subunit enzymes
-                if '__AND__' in ko:
-                    subunits = ko.split('__AND__')
-                    if all(sub.strip().upper() in ko_set for sub in subunits):
-                        return 1.0
-                    elif is_optional:
-                        return 0.0  # Optional component is missing but doesn't count against us
-                    else:
-                        return 0.0
-                else:
-                    if ko.strip().upper() in ko_set:
-                        return 1.0
-                    elif is_optional:
-                        return 0.0  # Optional component is missing but doesn't count against us
-                    else:
-                        return 0.0
+        # Count satisfied required components
+        satisfied = 0
+        required = 0
+        
+        for component in components:
+            is_satisfied = self._evaluate_component(component, ko_set)
             
-            elif block["type"] == "or":
-                options = block["options"]
-                
-                for option in options:
-                    # Handle both string options and dict options (for optional components)
-                    if isinstance(option, dict):
-                        ko_option = option["ko"]
-                        is_optional = option.get("optional", False)
-                    else:
-                        ko_option = option
-                        is_optional = False
-                    
-                    # Handle multi-subunit enzymes within OR options
-                    if '__AND__' in ko_option:
-                        subunits = ko_option.split('__AND__')
-                        if all(sub.strip().upper() in ko_set for sub in subunits):
-                            return 1.0
-                    else:
-                        if ko_option.strip().upper() in ko_set:
-                            return 1.0
-                
-                # All options are missing - check if any were optional
-                if any(isinstance(opt, dict) and opt.get("optional", False) for opt in options):
-                    return 0.0  # Optional branch is missing but doesn't count against us
-                return 0.0
+            if is_satisfied:
+                satisfied += 1
+            
+            # Count as required if not optional
+            if not component.get("optional", False):
+                required += 1
         
-        # Count blocks, excluding optional blocks that are missing
-        total_blocks = 0
-        block_scores = []
-        
-        for block in blocks:
-            score = evaluate_block(block)
-            if score > 0 or not (block.get("optional", False) if block["type"] == "step" 
-                               else any(isinstance(opt, dict) and opt.get("optional", False) 
-                                      for opt in block["options"]) if block["type"] == "or" else False):
-                total_blocks += 1
-                block_scores.append(score)
-        
-        return sum(block_scores) / total_blocks if total_blocks else 0.0
+        return satisfied / required if required > 0 else 0.0
     
-    def calculate_module_completeness(self, module_definition, ko_set):
+    def _evaluate_component(self, component: Dict, ko_set: Set[str]) -> bool:
         """
-        Calculate module completeness based on its Boolean structure.
+        Evaluate if a single component is satisfied.
+        """
+        comp_type = component["type"]
         
-        Args:
-            module_definition (str): KEGG module definition string
-            ko_set (set): Set of KO identifiers present in the dataset
+        if comp_type == "single":
+            # Single KO
+            return component["ko"].upper() in ko_set
             
-        Returns:
-            float: Scientifically meaningful completeness score between 0 and 1
+        elif comp_type == "or":
+            # OR group - at least one must be present
+            return any(ko.upper() in ko_set for ko in component["options"])
+            
+        elif comp_type == "complex":
+            # Complex - all subunits must be present  
+            return all(ko.upper() in ko_set for ko in component["subunits"])
+        
+        return False
+    
+    def calculate_module_completeness(self, module_definition: str, ko_set: Set[str]) -> float:
         """
-        # Cache the module structure to avoid repeated parsing
+        Calculate module completeness for a single module.
+        """
+        # Use caching to avoid re-parsing
         if module_definition in self.cached_module_structures:
             module_structure = self.cached_module_structures[module_definition]
         else:
@@ -187,35 +172,20 @@ class CompletenessCalculator:
             
         return self.evaluate_module_completeness(module_structure, ko_set)
     
-    def calculate_all_modules(self, module_to_kos, ko_set):
+    def calculate_all_modules(self, module_to_kos: Dict, ko_set: Set[str]) -> Dict[str, float]:
         """
-        Calculate completeness for multiple modules using their Boolean definitions.
-        
-        Args:
-            module_to_kos (dict): Standardized dictionary mapping module IDs to their data
-            ko_set (set): Set of KO identifiers present in the dataset
-            
-        Returns:
-            dict: Dictionary mapping module IDs to their completeness scores
+        Calculate completeness for all modules.
         """
         results = {}
         
         for module_id, module_data in module_to_kos.items():
-            # With standardized data, we always have a consistent structure
             definition = module_data.get('definition', '')
             
             if definition:
-                # Use sophisticated Boolean structure analysis
                 completeness = self.calculate_module_completeness(definition, ko_set)
-            else:
-                # Fallback to simple ratio for modules without definitions
-                module_kos = module_data.get('ko_set', set())
-                if module_kos:
-                    present_kos = module_kos.intersection(ko_set)
-                    completeness = len(present_kos) / len(module_kos)
-                else:
-                    completeness = 0.0
-            
-            results[module_id] = completeness
-            
+                
+                # Only include modules with completeness > 0
+                if completeness > 0:
+                    results[module_id] = completeness
+        
         return results

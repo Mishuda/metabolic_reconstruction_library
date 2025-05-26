@@ -19,8 +19,8 @@ class KeggRepository:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
             
-        # Create pickle data directory
-        self.pickle_dir = os.path.join(cache_dir, "pickled_data")
+        # Use root directory for pickle data instead of cache subdirectory
+        self.pickle_dir = "pickled_data"
         if not os.path.exists(self.pickle_dir):
             os.makedirs(self.pickle_dir)
         
