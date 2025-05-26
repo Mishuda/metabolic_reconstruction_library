@@ -46,13 +46,9 @@ def main():
         # Use provided mapping file
         module_to_kos = kegg_manager.load_module_to_ko_mapping(mapping_file)
     else:
-        # Create pickled_data directory if it doesn't exist
-        pickle_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pickled_data")
-        if not os.path.exists(pickle_dir):
-            os.makedirs(pickle_dir)
-        
-        # Update pickle_path to use the new directory
-        pickle_path = os.path.join(pickle_dir, "kegg_module_to_kos.pickle")
+        # Use the manager's internal pickle directory structure
+        pickle_filename = "kegg_module_to_kos.pickle"
+        pickle_path = os.path.join(kegg_manager.pickled_data_dir, pickle_filename)
         
         if (os.path.exists(pickle_path) and 
             (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(pickle_path))).days < 30):
@@ -62,13 +58,9 @@ def main():
             print("Cached mapping not found or outdated. Downloading fresh KEGG module data...")
             module_to_kos = kegg_manager.download_and_pickle_mapping(pickle_path)
 
-    # Prepare a simple module-to-kos dict for the report generator
-    simple_module_to_kos = {}
-    for module_id, module_data in module_to_kos.items():
-        if isinstance(module_data, dict) and 'ko_set' in module_data:
-            simple_module_to_kos[module_id] = module_data['ko_set']
-        else:
-            simple_module_to_kos[module_id] = module_data
+    # Standardize module data structure - ensure all components use consistent format
+    # This eliminates the need for redundant transformations later
+    standardized_module_data = kegg_manager.standardize_module_data(module_to_kos)
 
     # Get all KO lists
     print(f"Loading KO lists from {ko_lists_dir}...")
@@ -78,11 +70,11 @@ def main():
         return 1
     print(f"Found {len(ko_lists)} KO list files to process")
     
-    # Calculate completeness for each KO list
+    # Calculate completeness for each KO list using standardized data
     all_results = {}
     for file_name, ko_set in ko_lists.items():
         print(f"Processing {file_name}...")
-        module_results = calculator.calculate_all_modules(module_to_kos, ko_set)
+        module_results = calculator.calculate_all_modules(standardized_module_data, ko_set)
         all_results[file_name] = module_results
     
     # Get all module IDs with completeness > 0
@@ -93,10 +85,10 @@ def main():
     # Fetch module information
     module_info_df = kegg_manager.get_module_info(list(all_module_ids))
     
-    # Generate reports
+    # Generate reports using standardized data structure
     results_df = report_generator.generate_comparison_report(all_results, module_info_df)
     report_generator.generate_individual_reports(all_results, module_info_df)
-    report_generator.generate_detailed_report(all_results, simple_module_to_kos, module_info_df, ko_lists)
+    report_generator.generate_detailed_report(all_results, standardized_module_data, module_info_df, ko_lists)
     
     print("Analysis complete!")
     return 0

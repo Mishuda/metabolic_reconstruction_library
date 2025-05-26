@@ -55,33 +55,29 @@ class KeggModuleManager:
         
         return module_to_kos
     
-    def load_pickled_mapping(self, pickle_filename):
+    def load_pickled_mapping(self, pickle_path):
         """
-        Load module to KO mapping from a pickle file in the pickled_data directory.
+        Load module to KO mapping from a pickle file.
         
         Args:
-            pickle_filename (str): Filename of the pickle file
+            pickle_path (str): Full path to the pickle file
             
         Returns:
             dict: A dictionary mapping module IDs to their KO requirements
         """
-        pickle_path = os.path.join(self.pickled_data_dir, pickle_filename)
         with open(pickle_path, 'rb') as f:
             return pickle.load(f)
     
-    def download_and_pickle_mapping(self, pickle_filename):
+    def download_and_pickle_mapping(self, pickle_path):
         """
         Download fresh KEGG module data and save it to a pickle file.
         
         Args:
-            pickle_filename (str): Filename for the pickle file
+            pickle_path (str): Full path for the pickle file
             
         Returns:
             dict: A dictionary mapping module IDs to their KO requirements
         """
-        # Create the pickle path in the pickled_data directory
-        pickle_path = os.path.join(self.pickled_data_dir, pickle_filename)
-        
         # Download the latest KEGG module data using the repository
         module_to_kos = self.repository.get_all_modules_data()
         
@@ -90,6 +86,46 @@ class KeggModuleManager:
             pickle.dump(module_to_kos, f)
         
         return module_to_kos
+    
+    def standardize_module_data(self, module_to_kos: Dict[str, Any]) -> Dict[str, Dict[str, Union[Set[str], str]]]:
+        """
+        Standardize module data structure for consistent use across all components.
+        
+        Args:
+            module_to_kos: Raw module data in various formats
+            
+        Returns:
+            Standardized dictionary with consistent structure for all modules
+        """
+        standardized = {}
+        
+        for module_id, module_data in module_to_kos.items():
+            if isinstance(module_data, dict):
+                # Already in structured format
+                if 'ko_set' in module_data and 'definition' in module_data:
+                    standardized[module_id] = module_data
+                else:
+                    # Partial structure - fill missing fields
+                    standardized[module_id] = {
+                        'ko_set': module_data.get('ko_set', set()),
+                        'definition': module_data.get('definition', '')
+                    }
+            elif isinstance(module_data, (set, list)):
+                # Legacy format - convert to standard structure
+                ko_set = set(module_data) if isinstance(module_data, list) else module_data
+                definition = self.repository.get_module_definition(module_id)
+                standardized[module_id] = {
+                    'ko_set': ko_set,
+                    'definition': definition or ''
+                }
+            else:
+                # Unknown format - create minimal structure
+                standardized[module_id] = {
+                    'ko_set': set(),
+                    'definition': ''
+                }
+        
+        return standardized
     
     def get_module_info(self, module_ids: List[str]) -> pd.DataFrame:
         """Fetch KEGG module information for a list of module IDs.

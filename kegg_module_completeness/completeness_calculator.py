@@ -192,7 +192,7 @@ class CompletenessCalculator:
         Calculate completeness for multiple modules using their Boolean definitions.
         
         Args:
-            module_to_kos (dict): Dictionary mapping module IDs to their KO sets and definitions
+            module_to_kos (dict): Standardized dictionary mapping module IDs to their data
             ko_set (set): Set of KO identifiers present in the dataset
             
         Returns:
@@ -201,15 +201,20 @@ class CompletenessCalculator:
         results = {}
         
         for module_id, module_data in module_to_kos.items():
-            # Check if we have the structured definition
-            if isinstance(module_data, dict) and 'definition' in module_data:
-                definition = module_data['definition']
+            # With standardized data, we always have a consistent structure
+            definition = module_data.get('definition', '')
+            
+            if definition:
+                # Use sophisticated Boolean structure analysis
                 completeness = self.calculate_module_completeness(definition, ko_set)
             else:
-                # Fallback to simple ratio if no definition is available
-                module_kos = module_data if isinstance(module_data, set) else module_data.get('ko_set', set())
-                present_kos = module_kos.intersection(ko_set)
-                completeness = len(present_kos) / len(module_kos) if len(module_kos) > 0 else 0
+                # Fallback to simple ratio for modules without definitions
+                module_kos = module_data.get('ko_set', set())
+                if module_kos:
+                    present_kos = module_kos.intersection(ko_set)
+                    completeness = len(present_kos) / len(module_kos)
+                else:
+                    completeness = 0.0
             
             results[module_id] = completeness
             
