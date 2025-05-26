@@ -24,6 +24,10 @@ import argparse
 
 def setup_logging(output_dir, level=logging.INFO):
     """Setup logging to both file and console"""
+    # Ensure output directory exists before creating log file
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
     log_file = os.path.join(output_dir, f"kegg_analysis_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
     
     logging.basicConfig(
@@ -83,12 +87,13 @@ def main():
     output_dir = args.output_dir
     mapping_file = args.mapping
 
+    # Setup logging (this will create output_dir if needed)
     logger = setup_logging(output_dir)
     logger.info("Starting KEGG module completeness analysis")
     
-    # Ensure output directory exists
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # This line is now redundant since setup_logging creates the directory
+    # if not os.path.exists(output_dir):
+    #     os.makedirs(output_dir)
 
     # Initialize components
     ko_manager = KoListManager()

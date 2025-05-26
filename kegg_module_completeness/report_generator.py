@@ -108,7 +108,7 @@ class ReportGenerator:
         
         Args:
             all_results: Results for all KO lists (file_name -> {module_id -> completeness})
-            module_to_kos: Dictionary mapping module IDs to sets of KO IDs
+            module_to_kos: Dictionary mapping module IDs to their data (standardized format)
             module_info_df: DataFrame with module information
             ko_lists: Dictionary mapping file names to sets of KO IDs
         """
@@ -136,8 +136,17 @@ class ReportGenerator:
                     definition = module_info_df.loc[module_id, 'Definition']
                     avg = avg_completeness.get(module_id, 0)
                     
-                    # Get all KOs in this module
-                    module_kos = module_to_kos.get(module_id, set())
+                    # Extract KO set from standardized module data
+                    module_data = module_to_kos.get(module_id, {})
+                    if isinstance(module_data, dict):
+                        # Standardized format - extract ko_set
+                        module_kos = module_data.get('ko_set', set())
+                        boolean_definition = module_data.get('definition', '')
+                    else:
+                        # Legacy format - assume it's a set
+                        module_kos = module_data if isinstance(module_data, set) else set()
+                        boolean_definition = definition
+                    
                     total_kos = len(module_kos)
                     
                     # Find KOs present in any of the files
@@ -148,6 +157,6 @@ class ReportGenerator:
                     missing_kos = module_kos - present_kos
                     
                     f.write(f"{module_id}\t{name}\t{class_info}\t{definition}\t{avg:.2f}\t")
-                    f.write(f"{','.join(present_kos)}\t{','.join(missing_kos)}\t{total_kos}\t{definition}\n")
+                    f.write(f"{','.join(present_kos)}\t{','.join(missing_kos)}\t{total_kos}\t{boolean_definition}\n")
         
         print(f"Detailed module information saved to {detailed_output}")
