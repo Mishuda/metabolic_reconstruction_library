@@ -5,7 +5,7 @@ KEGG Module Completeness Analysis Tool
 This script analyzes the completeness of KEGG modules in multiple KO lists
 and generates comparative reports.
 
-Usage: python kegg_module_completeness.py ko_lists_dir/ output_dir/ [module_ko_mapping.tsv]
+Usage: python kegg_module_completeness.py ko_lists_dir/ output_dir/ [--mapping module_ko_mapping.tsv]
 
 If module_ko_mapping.tsv is not provided, a cached mapping will be used,
 which is automatically refreshed every 30 days.
@@ -48,16 +48,14 @@ def parse_arguments():
 Examples:
   python main.py ko_lists/ output/
   python main.py ko_lists/ output/ --mapping custom_mapping.tsv
-  python main.py ko_lists/ output/ --parallel --verbose
+  python main.py ko_lists/ output/ --verbose
         """
     )
     
     parser.add_argument('ko_lists_dir', help='Directory containing KO list files')
     parser.add_argument('output_dir', help='Output directory for reports')
     parser.add_argument('--mapping', help='Custom module-KO mapping file')
-    parser.add_argument('--parallel', action='store_true', help='Use parallel processing')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
-    parser.add_argument('--config', help='Configuration file path')
     
     return parser.parse_args()
 
@@ -90,14 +88,10 @@ def main():
     # Setup logging (this will create output_dir if needed)
     logger = setup_logging(output_dir)
     logger.info("Starting KEGG module completeness analysis")
-    
-    # This line is now redundant since setup_logging creates the directory
-    # if not os.path.exists(output_dir):
-    #     os.makedirs(output_dir)
 
     # Initialize components
     ko_manager = KoListManager()
-    kegg_manager = KeggModuleManager(output_dir)  # Still pass output_dir for other caching
+    kegg_manager = KeggModuleManager(output_dir)
     calculator = CompletenessCalculator()
     report_generator = ReportGenerator(output_dir)
 
@@ -109,7 +103,7 @@ def main():
     else:
         # Use root directory for pickle files
         pickle_filename = "kegg_module_to_kos.pickle"
-        pickle_path = os.path.join("pickled_data", pickle_filename)  # Root directory path
+        pickle_path = os.path.join("pickled_data", pickle_filename)
         
         if (os.path.exists(pickle_path) and 
             (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(pickle_path))).days < 30):
@@ -119,11 +113,10 @@ def main():
             logger.info("Cached mapping not found or outdated. Downloading fresh KEGG module data...")
             module_to_kos = kegg_manager.download_and_pickle_mapping(pickle_path)
 
-    # Standardize module data structure - ensure all components use consistent format
-    # This eliminates the need for redundant transformations later
+    # Standardize module data structure
     standardized_module_data = kegg_manager.standardize_module_data(module_to_kos)
 
-    # Get all KO lists
+    # Get all KO lists (no caching, always fresh from directory)
     logger.info(f"Loading KO lists from {ko_lists_dir}...")
     ko_lists = ko_manager.get_ko_lists(ko_lists_dir)
     if not ko_lists:
@@ -148,10 +141,8 @@ def main():
     # Fetch module information
     module_info_df = kegg_manager.get_module_info(list(all_module_ids))
     
-    # Generate reports using standardized data structure
-    results_df = report_generator.generate_comparison_report(all_results, module_info_df)
+    # Generate individual reports only
     report_generator.generate_individual_reports(all_results, module_info_df)
-    report_generator.generate_detailed_report(all_results, standardized_module_data, module_info_df, ko_lists)
     
     # Print analysis summary
     print_analysis_summary(all_results, logger)

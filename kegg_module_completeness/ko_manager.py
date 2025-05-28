@@ -8,11 +8,11 @@ class KoListManager:
     
     def __init__(self):
         """Initialize the KO list manager."""
-        self.cached_ko_sets = {}
+        pass
     
     def parse_ko_list(self, file_path):
         """
-        Parse a file containing KO IDs with caching for efficiency.
+        Parse a file containing KO IDs.
         
         Args:
             file_path (str): Path to the file with KO IDs
@@ -20,14 +20,9 @@ class KoListManager:
         Returns:
             set: Set of KO identifiers
         """
-        if file_path in self.cached_ko_sets:
-            return self.cached_ko_sets[file_path]
-        
-        # Move the implementation from parse_modules.py directly here
         with open(file_path, "r") as f:
             ko_set = set(line.strip().upper() for line in f if line.strip())
             
-        self.cached_ko_sets[file_path] = ko_set
         return ko_set
     
     def get_ko_lists(self, directory: str) -> Dict[str, Set[str]]:

@@ -68,8 +68,8 @@ class CompletenessCalculator:
         """
         components = []
         
-        # Split by spaces = AND components
-        tokens = logical_def.split()
+        # Handle nested parentheses properly by tokenizing first
+        tokens = self._tokenize_respecting_parentheses(logical_def)
         
         for token in tokens:
             token = token.strip()
@@ -82,15 +82,10 @@ class CompletenessCalculator:
                 token = token[1:]
             
             if token.startswith('(') and token.endswith(')'):
-                # OR group: (K01584,K01585,K02626)
-                or_content = token[1:-1]  # Remove parentheses
-                or_options = [opt.strip() for opt in or_content.split(',')]
-                
-                components.append({
-                    "type": "or",
-                    "options": or_options,
-                    "optional": is_optional
-                })
+                # Could be simple OR or complex nested structure
+                component = self._parse_parenthetical_structure(token)
+                component["optional"] = is_optional
+                components.append(component)
                 
             elif '+' in token:
                 # Complex: K07432+K07441 (all subunits required)
@@ -112,6 +107,110 @@ class CompletenessCalculator:
         
         return components
     
+    def _tokenize_respecting_parentheses(self, logical_def: str) -> List[str]:
+        """
+        Tokenize while respecting parentheses boundaries.
+        """
+        tokens = []
+        current_token = ""
+        paren_depth = 0
+        
+        for char in logical_def:
+            if char == '(':
+                if paren_depth == 0 and current_token.strip():
+                    # Save previous token before starting parentheses
+                    tokens.append(current_token.strip())
+                    current_token = ""
+                current_token += char
+                paren_depth += 1
+            elif char == ')':
+                current_token += char
+                paren_depth -= 1
+                if paren_depth == 0:
+                    # End of parenthetical group
+                    tokens.append(current_token.strip())
+                    current_token = ""
+            elif char == ' ' and paren_depth == 0:
+                # Space outside parentheses = separator
+                if current_token.strip():
+                    tokens.append(current_token.strip())
+                    current_token = ""
+            else:
+                current_token += char
+        
+        # Add final token
+        if current_token.strip():
+            tokens.append(current_token.strip())
+        
+        return tokens
+    
+    def _parse_parenthetical_structure(self, token: str) -> Dict:
+        """
+        Parse a parenthetical structure which could be simple OR or complex nested.
+        """
+        # Remove outer parentheses
+        inner = token[1:-1]
+        
+        # Check if this contains nested parentheses
+        if '(' in inner and ')' in inner:
+            # Complex structure like (K00134,K00150) K00927,K11389
+            return self._parse_complex_nested_structure(inner)
+        else:
+            # Simple OR: K01584,K01585,K02626
+            or_options = [opt.strip() for opt in inner.split(',')]
+            return {
+                "type": "or",
+                "options": or_options
+            }
+    
+    def _parse_complex_nested_structure(self, inner: str) -> Dict:
+        """
+        Parse complex nested structure like (K00134,K00150) K00927,K11389
+        This means: ((K00134 OR K00150) AND K00927) OR K11389
+        """
+        # Split by comma at the top level to find OR alternatives
+        or_alternatives = []
+        current_alt = ""
+        paren_depth = 0
+        
+        for char in inner:
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            elif char == ',' and paren_depth == 0:
+                # Top-level comma = OR separator
+                if current_alt.strip():
+                    or_alternatives.append(current_alt.strip())
+                current_alt = ""
+                continue
+            current_alt += char
+        
+        if current_alt.strip():
+            or_alternatives.append(current_alt.strip())
+        
+        # Now parse each alternative
+        parsed_alternatives = []
+        for alt in or_alternatives:
+            alt = alt.strip()
+            if '(' in alt and ')' in alt:
+                # Contains sub-parentheses - this is an AND group like "(K00134,K00150) K00927"
+                parsed_alternatives.append({
+                    "type": "and_group",
+                    "definition": alt
+                })
+            else:
+                # Simple KO
+                parsed_alternatives.append({
+                    "type": "simple_ko",
+                    "ko": alt
+                })
+        
+        return {
+            "type": "complex_or",
+            "alternatives": parsed_alternatives
+        }
+    
     def evaluate_module_completeness(self, module_structure: Dict, ko_set: Set[str]) -> float:
         """
         Evaluate module completeness using KEGG's AND/OR logic.
@@ -132,8 +231,7 @@ class CompletenessCalculator:
             
             if is_satisfied:
                 satisfied += 1
-            
-            # Count as required if not optional
+              # Count as required if not optional
             if not component.get("optional", False):
                 required += 1
         
@@ -157,7 +255,47 @@ class CompletenessCalculator:
             # Complex - all subunits must be present  
             return all(ko.upper() in ko_set for ko in component["subunits"])
         
+        elif comp_type == "complex_or":
+            # Complex OR structure like ((K00134,K00150) K00927,K11389)
+            return any(self._evaluate_alternative(alt, ko_set) for alt in component["alternatives"])
+        
         return False
+    
+    def _evaluate_alternative(self, alternative: Dict, ko_set: Set[str]) -> bool:
+        """
+        Evaluate a single alternative in a complex OR structure.
+        """
+        alt_type = alternative["type"]
+        
+        if alt_type == "simple_ko":
+            return alternative["ko"].upper() in ko_set
+        elif alt_type == "and_group":
+            # Parse and evaluate AND group like "(K00134,K00150) K00927"
+            return self._evaluate_and_group(alternative["definition"], ko_set)
+        
+        return False
+    
+    def _evaluate_and_group(self, definition: str, ko_set: Set[str]) -> bool:
+        """
+        Evaluate an AND group like "(K00134,K00150) K00927".
+        """
+        # Split by spaces to get AND components
+        tokens = definition.split()
+        
+        for token in tokens:
+            token = token.strip()
+            if token.startswith('(') and token.endswith(')'):
+                # OR group within the AND
+                or_content = token[1:-1]
+                or_options = [opt.strip() for opt in or_content.split(',')]
+                if not any(ko.upper() in ko_set for ko in or_options):
+                    return False
+            elif re.match(r'K\d{5}', token):
+                # Single KO
+                if token.upper() not in ko_set:
+                    return False
+        
+        return True
     
     def calculate_module_completeness(self, module_definition: str, ko_set: Set[str]) -> float:
         """
@@ -173,6 +311,7 @@ class CompletenessCalculator:
         return self.evaluate_module_completeness(module_structure, ko_set)
     
     def calculate_all_modules(self, module_to_kos: Dict, ko_set: Set[str]) -> Dict[str, float]:
+
         """
         Calculate completeness for all modules.
         """
