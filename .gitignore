@@ -1,15 +1,10 @@
-# Cache directories
+# Cache directories (regenerated from KEGG API)
 pickled_data/
 **/pickled_data/
 
-# Output directories 
-significant_ko_lists/
-*_module_completeness.tsv
-module_completeness_comparison.tsv
-module_details.tsv
-
-# Input data directories (if large data files)
-input_files/
+# Note: Input and output files are now tracked to enable work across multiple laptops
+# input_files/ - now tracked
+# output files - now tracked
 
 # Python standard ignore patterns
 __pycache__/
