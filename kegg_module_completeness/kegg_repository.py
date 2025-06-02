@@ -5,6 +5,7 @@ import pickle
 import requests
 import pandas as pd
 from typing import Dict, Set, List, Optional, Any
+from datetime import datetime
 
 class KeggRepository:
     """Repository for KEGG data access, providing caching and standardized API interactions."""
@@ -268,11 +269,10 @@ class KeggRepository:
                 }
             except Exception as e:
                 print(f"Error processing module {module_id}: {e}")
-        
-        # Cache the results
+          # Cache the results
         with open(cache_path, 'wb') as f:
             pickle.dump(modules_data, f)
-            
+        
         return modules_data
     
     def get_module_info_dataframe(self, module_ids: List[str]) -> pd.DataFrame:
@@ -291,18 +291,81 @@ class KeggRepository:
             try:
                 module_info_df = pd.read_csv(cache_file, index_col="Module_ID")
                 print(f"Loaded module info dataframe from cache: {cache_file}")
+                
+                # PREVENTION: Check if cache is complete by comparing with all available modules
+                all_module_ids = self.get_module_list()
+                missing_modules = set(all_module_ids) - set(module_info_df.index)
+                
+                if missing_modules:
+                    print(f"WARNING: Cache is incomplete! Missing {len(missing_modules)} modules.")
+                    print(f"Examples of missing modules: {list(missing_modules)[:5]}")
+                    print("Regenerating complete cache...")
+                    # Force regeneration with ALL modules                    return self._generate_complete_module_cache(cache_file)
+                
                 return module_info_df
             except Exception as e:
                 print(f"Error reading cache: {e}")
         
+        # PREVENTION: Always generate complete cache with ALL modules
+        return self._generate_complete_module_cache(cache_file)
+    
+    def _generate_complete_module_cache(self, cache_file: str) -> pd.DataFrame:
+        """Generate a complete module information cache with ALL available modules.
+        
+        Args:
+            cache_file: Path to the cache file
+            
+        Returns:
+            Complete DataFrame with all module information
+        """
+        # Get ALL available modules
+        all_module_ids = self.get_module_list()
+        print(f"Generating complete cache for {len(all_module_ids)} modules...")
+        
         # Collect information for all modules
         module_info = {}
         print("Fetching KEGG module information...")
-        for module_id in module_ids:
+        for module_id in all_module_ids:
             module_info[module_id] = self.get_module_info(module_id)
         
         # Convert to DataFrame and save cache
         module_info_df = pd.DataFrame.from_dict(module_info, orient='index')
         module_info_df.index.name = "Module_ID"
         module_info_df.to_csv(cache_file)
+        print(f"Complete module cache saved with {len(module_info_df)} modules")
         return module_info_df
+    
+    def validate_module_cache(self) -> bool:
+        """Validate that the module info cache is complete and up-to-date.
+        
+        Returns:
+            True if cache is valid, False if it needs regeneration
+        """
+        cache_file = os.path.join(self.pickle_dir, "kegg_module_info.csv")
+        
+        if not os.path.exists(cache_file):
+            print("Module info cache does not exist")
+            return False
+        
+        # Check cache age (regenerate if older than 30 days)
+        cache_age_days = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_file))).days
+        if cache_age_days > 30:
+            print(f"Module info cache is {cache_age_days} days old (> 30 days)")
+            return False
+        
+        try:
+            # Check cache completeness
+            module_info_df = pd.read_csv(cache_file, index_col="Module_ID")
+            all_module_ids = self.get_module_list()
+            missing_modules = set(all_module_ids) - set(module_info_df.index)
+            
+            if missing_modules:
+                print(f"Module info cache is incomplete - missing {len(missing_modules)} modules")
+                return False
+            
+            print(f"Module info cache is valid ({len(module_info_df)} modules)")
+            return True
+            
+        except Exception as e:
+            print(f"Error validating cache: {e}")
+            return False
