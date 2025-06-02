@@ -10,6 +10,10 @@ Tests all the KEGG definition rules:
 5. Parentheses group OR alternatives
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from kegg_module_completeness.completeness_calculator import CompletenessCalculator
 
 def test_kegg_logic():
