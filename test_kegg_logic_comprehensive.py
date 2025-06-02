@@ -100,6 +100,35 @@ def test_kegg_logic():
                 ({"K00001", "K00003"}, 1.0, "Required components present, optional missing"),
                 ({"K00001", "K00002", "K00003"}, 1.0, "All components including optional present"),
                 ({"K00001"}, 0.5, "Missing one required component"),
+                ({"K00002"}, 0.0, "Only optional component present"),
+                ({"K00001", "K00002"}, 0.5, "Required and optional present, missing one required"),
+                ({}, 0.0, "No components present")
+            ]
+        },
+        
+        # Case 8: Multiple optional components
+        {
+            "name": "Multiple optional components",
+            "definition": "K00001 -K00002 -K00003 K00004",
+            "test_sets": [
+                ({"K00001", "K00004"}, 1.0, "Only required components present"),
+                ({"K00001", "K00002", "K00004"}, 1.0, "Required plus one optional present"),
+                ({"K00001", "K00002", "K00003", "K00004"}, 1.0, "All components present"),
+                ({"K00001"}, 0.5, "Missing one required component"),
+                ({"K00002", "K00003"}, 0.0, "Only optional components present"),
+                ({}, 0.0, "No components present")
+            ]
+        },
+        
+        # Case 9: Optional in complex
+        {
+            "name": "Optional in complex with plus",
+            "definition": "K00001+K00002+-K00003",
+            "test_sets": [
+                ({"K00001", "K00002"}, 1.0, "Required complex components present"),
+                ({"K00001", "K00002", "K00003"}, 1.0, "Complex with optional present"),
+                ({"K00001"}, 0.0, "Incomplete required complex"),
+                ({"K00003"}, 0.0, "Only optional component present"),
                 ({}, 0.0, "No components present")
             ]
         }
