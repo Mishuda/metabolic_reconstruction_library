@@ -34,6 +34,12 @@ class KeggRepository:
         self.last_request_time = 0
         self.request_delay = 0.2  # seconds between requests
         
+        # Manual overrides for problematic modules (add more as needed)
+        self.manual_logic_overrides = {
+            'M00002': 'K01803 ((K00134,K00150) K00927,K11389) (K01834,K15633,K15634,K15635) (K01689,K27394) (K00873,K12406)',
+            # Add more module overrides here if needed
+        }
+
     def _make_api_request(self, url: str) -> str:
         """Make a rate-limited API request to KEGG.
         
@@ -170,8 +176,39 @@ class KeggRepository:
         self.module_info_cache[module_id] = empty_result
         return empty_result
     
+    def _extract_logical_definition(self, definition: str, module_id: Optional[str] = None) -> str:
+        """
+        Extract only the logical part of a KEGG definition.
+        Stops at the first enzyme name, annotation, or trailing KO list after logic block.
+        Uses manual override if available.
+        """
+        # Manual override
+        if module_id and module_id in self.manual_logic_overrides:
+            return self.manual_logic_overrides[module_id]
+        if not definition:
+            return ''
+        # Clean whitespace
+        definition = re.sub(r'\s+', ' ', definition).strip()
+        # Tokenize and track parentheses depth
+        tokens = re.findall(r'K\d{5}|[(),+]', definition)
+        depth = 0
+        logic_tokens = []
+        for match in re.finditer(r'K\d{5}|[(),+]|\S+', definition):
+            token = match.group(0)
+            if token == '(': depth += 1
+            elif token == ')': depth = max(0, depth - 1)
+            if re.match(r'K\d{5}', token):
+                if depth == 0 and logic_tokens and logic_tokens[-1] == ')':
+                    # KO outside logic block, stop
+                    break
+            logic_tokens.append(token)
+        logic_str = ' '.join(logic_tokens).strip()
+        # Remove trailing punctuation if present
+        logic_str = re.sub(r'[,+]+$', '', logic_str).strip()
+        return logic_str
+
     def get_module_definition(self, module_id: str) -> str:
-        """Get the definition string for a KEGG module.
+        """Get the logical definition string for a KEGG module (only logic, no annotation).
         
         Args:
             module_id: Module ID
@@ -186,10 +223,11 @@ class KeggRepository:
         # Get full module info and extract definition
         module_info = self.get_module_info(module_id)
         definition = module_info.get("Definition", "")
+        logical_definition = self._extract_logical_definition(definition, module_id)
         
         # Cache and return the definition
-        self.module_definition_cache[module_id] = definition
-        return definition
+        self.module_definition_cache[module_id] = logical_definition
+        return logical_definition
     
     def get_module_kos(self, module_id: str) -> Set[str]:
         """Get the set of KOs for a KEGG module.
@@ -235,7 +273,7 @@ class KeggRepository:
         return ko_ids
     
     def get_all_modules_data(self) -> Dict[str, Dict[str, Any]]:
-        """Get data for all KEGG modules.
+        """Get data for all KEGG modules (logical definition and KO set).
         
         Returns:
             Dictionary mapping module IDs to their data (definition and KO set)
@@ -260,11 +298,11 @@ class KeggRepository:
                 print(f"Processing module {i+1}/{len(module_ids)}")
                 
             try:
-                definition = self.get_module_definition(module_id)
-                ko_set = self._parse_definition_to_kos(definition)
+                logical_definition = self.get_module_definition(module_id)
+                ko_set = self._parse_definition_to_kos(logical_definition)
                 
                 modules_data[module_id] = {
-                    'definition': definition,
+                    'definition': logical_definition,
                     'ko_set': ko_set
                 }
             except Exception as e:

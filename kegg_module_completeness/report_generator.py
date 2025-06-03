@@ -19,8 +19,9 @@ class ReportGenerator:
     def _extract_logical_definition(self, definition: str) -> str:
         """
         Extract only the logical part of a KEGG definition.
-        The logical definition contains only K numbers, parentheses, commas, and spaces.
+        The logical definition contains only K numbers, parentheses, commas, spaces, and + signs.
         Enzyme descriptions always follow the logical part.
+        Also removes any trailing KO list after the logic block (e.g., ... (K00873,K12406) K00134,K00150 ...)
         """
         if not definition:
             return ""
@@ -28,27 +29,58 @@ class ReportGenerator:
         # Clean whitespace
         definition = re.sub(r'\s+', ' ', definition).strip()
         
-        # Find the first occurrence of a K number followed by space and lowercase text
-        # This indicates the start of enzyme descriptions
-        desc_match = re.search(r'K\d{5}\s+[a-z]', definition)
-        if desc_match:
-            logical_part = definition[:desc_match.start()].strip()
-            
-            # If we found a match but the logical part is empty, include just the K number
-            if not logical_part:
-                # Find all K numbers in the logical sequence
-                k_numbers = re.findall(r'K\d{5}', definition[:desc_match.start() + 6])
-                return ' '.join(k_numbers) if k_numbers else definition[:desc_match.start() + 6].strip()
-            
-            return logical_part
+        # Find all K number positions
+        k_positions = [(m.start(), m.end()) for m in re.finditer(r'K\d{5}', definition)]
         
-        # Fallback: if no enzyme descriptions found, check for [EC: or [RN: patterns
-        ec_match = re.search(r'\s*\[(?:EC|RN):', definition)
-        if ec_match:
-            return definition[:ec_match.start()].strip()
+        if not k_positions:
+            return definition
         
-        # If no clear separation found, return the whole definition
-        # This handles cases where the definition might only be logical
+        # Look for [EC: or [RN: patterns first (most reliable indicators)
+        ec_rn_match = re.search(r'\s*\[(?:EC|RN):', definition)
+        if ec_rn_match:
+            return definition[:ec_rn_match.start()].strip()
+        
+        # Look for enzyme descriptions by finding K numbers followed by text that doesn't look like structural elements
+        for i, (start, end) in enumerate(k_positions):
+            # Get the text after this K number
+            after_k = definition[end:].lstrip()
+            
+            # Skip if this is the last K number and there's nothing after it
+            if not after_k:
+                continue
+                
+            # Check if the text after this K number looks like an enzyme description
+            # Enzyme descriptions typically start with:
+            # 1. Lowercase letter (like "guanylate kinase")
+            # 2. A digit followed by hyphen (like "2-dehydropantoate")
+            # 3. Uppercase compound names followed by lowercase (like "GMP synthase", "UDPglucose--hexose")
+            # 4. But NOT structural elements like: K, (, ), ,, +, space
+            
+            # Check for clear enzyme description patterns
+            if re.match(r'^[a-z]', after_k):  # Starts with lowercase
+                return definition[:end].strip()
+            elif re.match(r'^\d+-', after_k):  # Starts with digit-hyphen (like "2-dehydro")
+                return definition[:end].strip()
+            elif re.match(r'^[A-Z]+[a-z]', after_k):  # Uppercase followed by lowercase (like "GMP synthase")
+                return definition[:end].strip()
+            elif re.match(r'^[A-Z]+[a-z]*--', after_k):  # Compound names with double dash (like "UDPglucose--hexose")
+                return definition[:end].strip()
+            elif re.match(r'^[A-Z]{2,}[a-z]', after_k):  # Multi-uppercase followed by lowercase (like "UDPglucose")
+                return definition[:end].strip()
+        
+        # Remove trailing KO list after logic block
+        logic_end = None
+        paren_matches = list(re.finditer(r'\)', definition))
+        if paren_matches:
+            logic_end = paren_matches[-1].end()
+        else:
+            k_matches = list(re.finditer(r'K\d{5}', definition))
+            if k_matches:
+                logic_end = k_matches[-1].end()
+        if logic_end:
+            return definition[:logic_end].strip()
+        
+        # If all else fails, return the whole definition
         return definition
     
     def generate_individual_reports(
