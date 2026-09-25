@@ -21,7 +21,7 @@ The issue occurred because the module information cache (`kegg_module_info.csv`)
 #### A. Regular Cache Validation
 Run this command periodically to validate cache completeness:
 ```bash
-cd "c:\Users\mlazar\Desktop\metabolic_reconstruction_library"
+cd /path/to/metabolic_reconstruction_library
 python -c "
 from kegg_module_completeness.kegg_repository import KeggRepository
 repo = KeggRepository('pickled_data')
